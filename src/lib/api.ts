@@ -13,6 +13,7 @@ export interface UploadResult {
   size: number;
   status: string;
   message: string;
+  extracted_text?: string;
 }
 
 export interface SearchResult {
@@ -102,7 +103,7 @@ export async function checkHealth(): Promise<{
   services: Record<string, boolean>;
 }> {
   const response = await fetch(`${API_BASE_URL}/health`);
-  
+
   if (!response.ok) {
     throw new Error('Health check failed');
   }

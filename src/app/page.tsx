@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Stars } from '@/components/ui/Stars';
+import StarfieldGlow from '@/components/StarfieldGlow';
 import { FloatingOrb } from '@/components/ui/FloatingOrb';
 import DropZone from '@/components/DropZone';
 import { ProcessingStatus } from '@/components/ProcessingStatus';
@@ -31,15 +31,18 @@ export default function Home() {
       const uploadResult = await uploadDocument(file);
       setProgress(33);
 
-      // Stage 2: Reading (simulated - backend doesn't extract text yet)
+      // Stage 2: Reading
       setStage('reading');
       setProgress(50);
 
-      // For now, use filename as placeholder text
-      // TODO: Backend needs to extract actual text from PDF
-      const textToAnalyze = `Document: ${uploadResult.filename}\nSize: ${uploadResult.size} bytes\n\nThis is a placeholder. The backend needs PDF text extraction implemented.`;
+      const textToAnalyze = uploadResult.extracted_text || `Document: ${uploadResult.filename}\n(No text extracted)`;
 
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate reading
+      if (!uploadResult.extracted_text) {
+        console.warn('No text extracted from document');
+      }
+
+      // Short delay for UX
+      await new Promise(resolve => setTimeout(resolve, 500));
       setProgress(66);
 
       // Stage 3: Analyzing with AI
@@ -79,7 +82,7 @@ export default function Home() {
 
   return (
     <>
-      <Stars />
+      <StarfieldGlow />
       <div className="min-h-screen flex flex-col items-center justify-center p-8 relative overflow-hidden">
         <FloatingOrb size="lg" />
 

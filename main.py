@@ -5,6 +5,9 @@ from typing import List, Optional
 import chromadb
 from langchain_ollama import OllamaLLM
 import logging
+import fitz  # PyMuPDF
+import json
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -98,17 +101,31 @@ async def analyze_document(request: DocumentAnalysisRequest):
     
     try:
         # Generate summary using Ollama
-        prompt = f"""Analyze the following legal document and provide:
-1. A brief summary
-2. Key points (3-5 main points)
-3. Important entities (people, organizations, dates)
+        prompt = f"""Analyze the following legal document and provide the output in strict JSON format with the following keys:
+- "summary": A brief summary of the document.
+- "key_points": A list of 3-5 main points.
+- "entities": A list of objects with "name" and "type" (e.g., Person, Organization, Date).
 
 Document:
-{request.text}
+{request.text[:10000]}  # Limit text to avoid context window issues
 
-Respond in a structured format."""
+Respond ONLY with the JSON object. Do not add any markdown formatting or extra text."""
         
-        response = llm.invoke(prompt)
+        response_text = llm.invoke(prompt)
+        
+        # Clean up response if it contains markdown code blocks
+        clean_response = re.sub(r'```json\s*|\s*```', '', response_text).strip()
+        
+        try:
+            parsed_response = json.loads(clean_response)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            logger.warning("Failed to parse JSON response from LLM, falling back to raw text")
+            parsed_response = {
+                "summary": response_text[:500],
+                "key_points": ["Could not parse structured analysis"],
+                "entities": []
+            }
         
         # Store in ChromaDB if available
         if collection and request.case_id:
@@ -118,11 +135,10 @@ Respond in a structured format."""
                 ids=[f"{request.case_id}_{len(request.text)}"]
             )
         
-        # Parse response (simplified - you may want more sophisticated parsing)
         return DocumentAnalysisResponse(
-            summary=response[:200] if len(response) > 200 else response,
-            key_points=["Analysis completed", "Document processed"],
-            entities=[],
+            summary=parsed_response.get("summary", "No summary available"),
+            key_points=parsed_response.get("key_points", []),
+            entities=parsed_response.get("entities", []),
             case_id=request.case_id
         )
         
@@ -135,40 +151,51 @@ async def upload_document(file: UploadFile = File(...)):
     """Upload and process document files"""
     if not file.filename.endswith(('.pdf', '.txt', '.docx')):
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Only PDF, TXT, and DOCX files are supported"
         )
-    
+
     try:
         # Read file content
         content = await file.read()
-        
-        # TODO: Add PDF processing with pymupdf
-        # TODO: Add OCR with pytesseract if needed
-        
+        extracted_text = ""
+
+        if file.filename.endswith('.pdf'):
+            # Open PDF from memory
+            with fitz.open(stream=content, filetype="pdf") as doc:
+                for page in doc:
+                    extracted_text += page.get_text()
+        elif file.filename.endswith('.txt'):
+            extracted_text = content.decode('utf-8')
+        else:
+            # Placeholder for DOCX
+            extracted_text = "DOCX extraction not yet implemented."
+
         return {
             "filename": file.filename,
             "size": len(content),
             "status": "uploaded",
-            "message": "File uploaded successfully"
+            "message": "File uploaded and processed successfully",
+            "extracted_text": extracted_text
         }
-        
+
     except Exception as e:
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
 
 @app.post("/api/search", response_model=SearchResponse)
 async def search_documents(request: SearchRequest):
     """Search documents in ChromaDB"""
     if not collection:
         raise HTTPException(status_code=503, detail="ChromaDB service not available")
-    
+
     try:
         results = collection.query(
             query_texts=[request.query],
             n_results=request.limit
         )
-        
+
         formatted_results = []
         if results['documents'] and results['documents'][0]:
             for i, doc in enumerate(results['documents'][0]):
@@ -177,12 +204,13 @@ async def search_documents(request: SearchRequest):
                     "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
                     "distance": results['distances'][0][i] if results['distances'] else None
                 })
-        
+
         return SearchResponse(results=formatted_results)
-        
+
     except Exception as e:
         logger.error(f"Search error: {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
 
 @app.get("/api/cases")
 async def list_cases():
@@ -193,6 +221,7 @@ async def list_cases():
         "total": 0,
         "message": "Neo4j integration pending"
     }
+
 
 if __name__ == "__main__":
     import uvicorn
