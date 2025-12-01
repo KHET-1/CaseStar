@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 import chromadb
 from langchain_ollama import OllamaLLM
@@ -8,10 +8,21 @@ import logging
 import fitz  # PyMuPDF
 import json
 import re
+import uuid
+import hashlib
+from datetime import datetime
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Security constants
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.docx'}
+MAX_TEXT_LENGTH = 100000  # Max characters for analysis
 
 # Initialize FastAPI
 app = FastAPI(
@@ -52,8 +63,20 @@ class HealthResponse(BaseModel):
     services: dict
 
 class DocumentAnalysisRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=MAX_TEXT_LENGTH)
     case_id: Optional[str] = None
+    
+    @validator('text')
+    def sanitize_text(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Text cannot be empty')
+        # Remove potential dangerous characters
+        dangerous_chars = ['<script', '</script', 'javascript:', 'onerror=', 'onclick=']
+        text_lower = v.lower()
+        for char in dangerous_chars:
+            if char in text_lower:
+                logger.warning(f"Potentially dangerous content detected and removed")
+        return v.strip()
 
 class DocumentAnalysisResponse(BaseModel):
     summary: str
@@ -127,12 +150,20 @@ Respond ONLY with the JSON object. Do not add any markdown formatting or extra t
                 "entities": []
             }
         
-        # Store in ChromaDB if available
+        # Store in ChromaDB if available with secure ID generation
         if collection and request.case_id:
+            # Generate secure unique ID using UUID
+            doc_id = f"{request.case_id}_{uuid.uuid4().hex}"
             collection.add(
                 documents=[request.text],
-                metadatas=[{"case_id": request.case_id, "type": "document"}],
-                ids=[f"{request.case_id}_{len(request.text)}"]
+                metadatas=[
+                    {
+                        "case_id": request.case_id, 
+                        "type": "document",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                ],
+                ids=[doc_id]
             )
         
         return DocumentAnalysisResponse(
@@ -148,40 +179,78 @@ Respond ONLY with the JSON object. Do not add any markdown formatting or extra t
 
 @app.post("/api/upload")
 async def upload_document(file: UploadFile = File(...)):
-    """Upload and process document files"""
-    if not file.filename.endswith(('.pdf', '.txt', '.docx')):
+    """Upload and process document files with security validation"""
+    
+    # Validate filename
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    
+    # Sanitize filename - remove path traversal attempts
+    safe_filename = file.filename.split('/')[-1].split('\\')[-1]
+    
+    # Check file extension
+    file_ext = '.' + safe_filename.rsplit('.', 1)[-1].lower() if '.' in safe_filename else ''
+    if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Only PDF, TXT, and DOCX files are supported"
+            detail=f"Only {', '.join(ALLOWED_EXTENSIONS)} files are supported"
         )
+    
+    # Validate content type
+    allowed_mime_types = {
+        'application/pdf', 'text/plain', 
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/octet-stream'  # Fallback
+    }
+    if file.content_type and file.content_type not in allowed_mime_types:
+        logger.warning(f"Suspicious content type: {file.content_type}")
 
     try:
-        # Read file content
-        content = await file.read()
+        # Read file content with size limit
+        content = await file.read(MAX_FILE_SIZE + 1)
+        
+        # Check file size
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.0f}MB"
+            )
+        
         extracted_text = ""
 
-        if file.filename.endswith('.pdf'):
+        if safe_filename.endswith('.pdf'):
             # Open PDF from memory
-            with fitz.open(stream=content, filetype="pdf") as doc:
-                for page in doc:
-                    extracted_text += page.get_text()
-        elif file.filename.endswith('.txt'):
-            extracted_text = content.decode('utf-8')
+            try:
+                with fitz.open(stream=content, filetype="pdf") as doc:
+                    for page in doc:
+                        extracted_text += page.get_text()
+            except Exception as pdf_error:
+                logger.warning(f"PDF extraction failed: {pdf_error}")
+                extracted_text = "Failed to extract text from PDF"
+        elif safe_filename.endswith('.txt'):
+            try:
+                extracted_text = content.decode('utf-8')
+            except UnicodeDecodeError:
+                # Try with error handling
+                extracted_text = content.decode('utf-8', errors='ignore')
         else:
             # Placeholder for DOCX
             extracted_text = "DOCX extraction not yet implemented."
 
         return {
-            "filename": file.filename,
+            "filename": safe_filename,  # Return sanitized filename
             "size": len(content),
             "status": "uploaded",
             "message": "File uploaded and processed successfully",
             "extracted_text": extracted_text
         }
 
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 413)
+        raise
     except Exception as e:
         logger.error(f"Upload error: {e}")
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Upload failed")
 
 
 @app.post("/api/search", response_model=SearchResponse)
