@@ -75,7 +75,7 @@ export function ResultsPanel({ result, onClose }: ResultsPanelProps) {
                                     key={index}
                                     className="px-3 py-1 bg-purple-500/20 border border-purple-400/30 rounded-full text-sm text-purple-200"
                                 >
-                                    {entity.name || entity}
+                                    {typeof entity === 'string' ? entity : entity.name}
                                 </span>
                             ))}
                         </div>

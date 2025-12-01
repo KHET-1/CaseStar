@@ -1,10 +1,16 @@
 // API client for CaseStar backend
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+export interface Entity {
+  name: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
 export interface AnalysisResult {
   summary: string;
   key_points: string[];
-  entities: any[];
+  entities: Entity[];
   case_id?: string;
 }
 
@@ -18,7 +24,7 @@ export interface UploadResult {
 
 export interface SearchResult {
   text: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   distance: number | null;
 }
 

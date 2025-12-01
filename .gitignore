@@ -46,3 +46,7 @@ next-env.d.ts
 # python
 __pycache__
 *.pyc
+*.pyo
+htmlcov/
+.pytest_cache/
+.coverage
