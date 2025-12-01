@@ -1,12 +1,11 @@
 {
-  "name": "casestar-temp",
+  "name": "casestar",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "start:prod": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-prod.ps1",
     "lint": "eslint",
     "quality-gate": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/quality-gate.ps1",
     "quality-gate:fix": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/quality-gate.ps1 -Fix",
