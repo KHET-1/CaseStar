@@ -1,14 +1,81 @@
 'use client';
+import { useState } from 'react';
 import { Stars } from '@/components/ui/Stars';
 import { FloatingOrb } from '@/components/ui/FloatingOrb';
 import DropZone from '@/components/DropZone';
-import { motion } from 'framer-motion';
+import { ProcessingStatus } from '@/components/ProcessingStatus';
+import { ResultsPanel } from '@/components/ResultsPanel';
+import { motion, AnimatePresence } from 'framer-motion';
+import { uploadDocument, analyzeDocument, type AnalysisResult } from '@/lib/api';
+
+type ProcessingStage = 'idle' | 'uploading' | 'reading' | 'analyzing' | 'complete' | 'error';
 
 export default function Home() {
-  const handleDrop = (files: File[]) => {
-    // TODO: Implement file processing pipeline
-    alert(`Received ${files.length} file(s) — processing locally...`);
+  const [stage, setStage] = useState<ProcessingStage>('idle');
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+
+  const handleDrop = async (files: File[]) => {
+    if (files.length === 0) return;
+
+    const file = files[0]; // Process first file
+    setError(null);
+    setResult(null);
+
+    try {
+      // Stage 1: Uploading
+      setStage('uploading');
+      setProgress(0);
+
+      const uploadResult = await uploadDocument(file);
+      setProgress(33);
+
+      // Stage 2: Reading (simulated - backend doesn't extract text yet)
+      setStage('reading');
+      setProgress(50);
+
+      // For now, use filename as placeholder text
+      // TODO: Backend needs to extract actual text from PDF
+      const textToAnalyze = `Document: ${uploadResult.filename}\nSize: ${uploadResult.size} bytes\n\nThis is a placeholder. The backend needs PDF text extraction implemented.`;
+
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate reading
+      setProgress(66);
+
+      // Stage 3: Analyzing with AI
+      setStage('analyzing');
+      const caseId = `case-${Date.now()}`;
+
+      const analysisResult = await analyzeDocument(textToAnalyze, caseId);
+      setProgress(100);
+
+      // Stage 4: Complete
+      setStage('complete');
+      setResult(analysisResult);
+
+      // Auto-transition to showing results
+      setTimeout(() => {
+        setStage('idle');
+      }, 1500);
+
+    } catch (err) {
+      setStage('error');
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+
+      // Auto-reset after error
+      setTimeout(() => {
+        setStage('idle');
+        setError(null);
+      }, 3000);
+    }
   };
+
+  const handleCloseResults = () => {
+    setResult(null);
+    setStage('idle');
+  };
+
+  const isProcessing = stage !== 'idle' && !result;
 
   return (
     <>
@@ -16,27 +83,80 @@ export default function Home() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8 relative overflow-hidden">
         <FloatingOrb size="lg" />
 
+        {/* Header - Always visible */}
         <motion.div
           initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5, duration: 2 }}
-          className="text-center z-10 mt-20"
+          animate={{
+            opacity: 1,
+            y: 0,
+            scale: isProcessing || result ? 0.8 : 1,
+          }}
+          transition={{ duration: 0.8 }}
+          className="text-center z-10"
         >
-          <h1 className="text-8xl md:text-9xl font-black bg-gradient-to-r from-purple-400 via-pink-500 to-cyan-400 bg-clip-text text-transparent leading-tight">
+          <h1 className="text-6xl md:text-8xl font-black bg-gradient-to-r from-purple-400 via-pink-500 to-cyan-400 bg-clip-text text-transparent leading-tight">
             CaseStar
           </h1>
-          <p className="mt-12 text-3xl text-purple-100/90 font-light">
-            Your documents. Your truth. Protected.
+          <p className="mt-6 text-xl md:text-2xl text-purple-100/90 font-light">
+            AI-powered legal document analysis
           </p>
         </motion.div>
 
-        <div className="mt-32 z-10">
-          <DropZone onDrop={handleDrop} />
+        {/* Main Content Area */}
+        <div className="mt-16 z-10 flex flex-col items-center w-full">
+          <AnimatePresence mode="wait">
+            {/* Show DropZone when idle */}
+            {stage === 'idle' && !result && (
+              <motion.div
+                key="dropzone"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="w-full flex flex-col items-center"
+              >
+                <DropZone onDrop={handleDrop} />
+
+                {/* Helpful hint */}
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1 }}
+                  className="mt-6 text-purple-300/60 text-sm text-center max-w-md"
+                >
+                  💡 Drop a legal document (PDF, TXT, or DOCX) and I&apos;ll analyze it for you
+                </motion.p>
+              </motion.div>
+            )}
+
+            {/* Show Processing Status */}
+            {isProcessing && (
+              <ProcessingStatus
+                key="processing"
+                stage={stage === 'error' ? 'error' : stage === 'complete' ? 'complete' : stage === 'analyzing' ? 'analyzing' : stage === 'reading' ? 'reading' : 'uploading'}
+                message={error || undefined}
+                progress={progress}
+              />
+            )}
+
+            {/* Show Results */}
+            {result && (
+              <ResultsPanel
+                key="results"
+                result={result}
+                onClose={handleCloseResults}
+              />
+            )}
+          </AnimatePresence>
         </div>
 
-        <div className="absolute bottom-12 text-purple-500/30 text-sm animate-pulse">
-          ↑ ↑ ↓ ↓ ← → ← → B A for the void
-        </div>
+        {/* Footer hint */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: stage === 'idle' ? 0.3 : 0 }}
+          className="absolute bottom-12 text-purple-500/30 text-sm"
+        >
+          Powered by Ollama AI • 100% local processing
+        </motion.div>
       </div>
     </>
   );

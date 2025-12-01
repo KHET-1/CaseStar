@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
                 : "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
-              "font-src 'self' data:",
+              "font-src 'self' data: https:",
               // In dev: allow localhost websockets for hot reload
               isDev
                 ? "connect-src 'self' ws://localhost:* http://localhost:*"

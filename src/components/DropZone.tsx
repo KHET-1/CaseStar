@@ -22,11 +22,11 @@ export default function DropZone({ onDrop }: { onDrop: (files: File[]) => void }
   // getRootProps() returns React HTML props, but motion.div expects Framer Motion props
   // These event handlers have conflicting type signatures between React and Framer Motion
   const { 
-    onAnimationStart, 
-    onAnimationEnd, 
-    onDrag, 
-    onDragStart, 
-    onDragEnd,
+    onAnimationStart: _onAnimationStart, 
+    onAnimationEnd: _onAnimationEnd, 
+    onDrag: _onDrag, 
+    onDragStart: _onDragStart, 
+    onDragEnd: _onDragEnd,
     ...rootPropsForMotion 
   } = getRootProps();
 
