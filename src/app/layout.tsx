@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Stars } from "@/components/ui/Stars";
+import { SettingsProvider } from '@/context/SettingsContext';
+import { AdminPanel } from '@/components/AdminPanel';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,10 +30,13 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-[var(--bg)] text-[var(--text)] antialiased overflow-x-hidden`}
       >
-        <Stars />
-        <div className="relative z-10">
-          {children}
-        </div>
+        <SettingsProvider>
+          <Stars />
+          <div className="relative z-10">
+            <AdminPanel />
+            {children}
+          </div>
+        </SettingsProvider>
       </body>
     </html>
   );

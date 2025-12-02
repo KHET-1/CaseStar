@@ -64,7 +64,6 @@ function Test-CSPViolations {
     # Check for eval, Function constructor, inline handlers
     Get-ChildItem -Path src -Include *.ts,*.tsx,*.js,*.jsx -Recurse -ErrorAction SilentlyContinue | 
         ForEach-Object {
-            $content = Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue
             $lineNum = 0
             Get-Content $_.FullName -ErrorAction SilentlyContinue | ForEach-Object {
                 $lineNum++
@@ -129,6 +128,23 @@ function Test-TypeScript {
         } else {
             Write-Check "TypeScript errors found" "FAIL" "Red"
             $result | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+            
+            if ($Fix) {
+                Write-Host "  Attempting auto-fix..." -ForegroundColor Yellow
+                
+                # Run ESLint with --fix to auto-fix TypeScript issues
+                npx eslint . --ext .ts,.tsx --fix 2>&1 | Out-Null
+                
+                # Re-check TypeScript
+                $retryResult = npx tsc --noEmit 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Check "Auto-fix successful! TypeScript now passes" "PASS"
+                    return
+                } else {
+                    Write-Check "Auto-fix applied, but some errors remain" "WARN" "Yellow"
+                }
+            }
+            
             $script:IssuesFound++
         }
     } else {
@@ -260,9 +276,9 @@ function Test-CodeQuality {
     Get-ChildItem -Path src -Include *.ts,*.tsx,*.js,*.jsx -Recurse -ErrorAction SilentlyContinue | 
         Where-Object { $_.Name -notmatch '.test.|.spec.' } |
         ForEach-Object {
-            $matches = Select-String -Path $_.FullName -Pattern 'console\.(log|debug|info)' -AllMatches
-            if ($matches) {
-                $consoleLogs += $matches.Matches.Count
+            $matchResults = Select-String -Path $_.FullName -Pattern 'console\.(log|debug|info)' -AllMatches
+            if ($matchResults) {
+                $consoleLogs += $matchResults.Matches.Count
             }
         }
     
@@ -275,9 +291,9 @@ function Test-CodeQuality {
     $todos = 0
     Get-ChildItem -Path src -Include *.ts,*.tsx,*.js,*.jsx,*.ps1 -Recurse -ErrorAction SilentlyContinue | 
         ForEach-Object {
-            $matches = Select-String -Path $_.FullName -Pattern '(TODO|FIXME):' -AllMatches
-            if ($matches) {
-                $todos += $matches.Matches.Count
+            $todoMatches = Select-String -Path $_.FullName -Pattern '(TODO|FIXME):' -AllMatches
+            if ($todoMatches) {
+                $todos += $todoMatches.Matches.Count
             }
         }
     

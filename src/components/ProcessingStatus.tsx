@@ -6,6 +6,7 @@ interface ProcessingStatusProps {
     stage: 'uploading' | 'reading' | 'analyzing' | 'complete' | 'error';
     message?: string;
     progress?: number;
+    onRetry?: () => void;
 }
 
 const stageInfo = {
@@ -36,7 +37,7 @@ const stageInfo = {
     },
 };
 
-export function ProcessingStatus({ stage, message, progress }: ProcessingStatusProps) {
+export function ProcessingStatus({ stage, message, progress, onRetry }: ProcessingStatusProps) {
     const info = stageInfo[stage];
 
     return (
@@ -83,6 +84,18 @@ export function ProcessingStatus({ stage, message, progress }: ProcessingStatusP
                             className="h-full bg-gradient-to-r from-purple-400 to-pink-400"
                         />
                     </div>
+                )}
+
+                {/* Retry Button */}
+                {stage === 'error' && onRetry && (
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={onRetry}
+                        className="mt-4 px-6 py-2 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/50 rounded-full text-purple-100 transition-colors"
+                    >
+                        Try Again
+                    </motion.button>
                 )}
 
                 {/* Loading Dots */}

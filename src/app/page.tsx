@@ -4,7 +4,7 @@ import StarfieldGlow from '@/components/StarfieldGlow';
 import { FloatingOrb } from '@/components/ui/FloatingOrb';
 import DropZone from '@/components/DropZone';
 import { ProcessingStatus } from '@/components/ProcessingStatus';
-import { ResultsPanel } from '@/components/ResultsPanel';
+import { TimelineView } from '@/components/TimelineView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadDocument, analyzeDocument, type AnalysisResult } from '@/lib/api';
 
@@ -64,12 +64,6 @@ export default function Home() {
     } catch (err) {
       setStage('error');
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
-
-      // Auto-reset after error
-      setTimeout(() => {
-        setStage('idle');
-        setError(null);
-      }, 3000);
     }
   };
 
@@ -138,15 +132,19 @@ export default function Home() {
                 stage={stage === 'error' ? 'error' : stage === 'complete' ? 'complete' : stage === 'analyzing' ? 'analyzing' : stage === 'reading' ? 'reading' : 'uploading'}
                 message={error || undefined}
                 progress={progress}
+                onRetry={() => {
+                  setStage('idle');
+                  setError(null);
+                }}
               />
             )}
 
-            {/* Show Results */}
+            {/* Show Results / Timeline Flow */}
             {result && (
-              <ResultsPanel
+              <TimelineView
                 key="results"
                 result={result}
-                onClose={handleCloseResults}
+                onComplete={handleCloseResults}
               />
             )}
           </AnimatePresence>
