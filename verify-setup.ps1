@@ -68,7 +68,7 @@ try {
     $missingPackages = @()
     
     foreach ($pkg in $packages) {
-        $check = pip show $pkg 2>&1
+        $null = pip show $pkg 2>&1
         if ($LASTEXITCODE -ne 0) {
             $missingPackages += $pkg
         }
