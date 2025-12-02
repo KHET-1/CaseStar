@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional
@@ -11,11 +11,20 @@ import re
 import uuid
 import hashlib
 from datetime import datetime
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+import filetype
+from services.text_extractor import process_document_content
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("backend.log"),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -24,6 +33,9 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.docx'}
 MAX_TEXT_LENGTH = 100000  # Max characters for analysis
 
+# Initialize Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 # Initialize FastAPI
 app = FastAPI(
     title="CaseStar API",
@@ -31,20 +43,26 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Add Rate Limit Exception Handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # CORS middleware for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],  # Restrict methods
     allow_headers=["*"],
 )
 
 # Initialize ChromaDB client
 try:
-    chroma_client = chromadb.Client()
+    import os
+    PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
+    chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
     collection = chroma_client.get_or_create_collection(name="casestar_documents")
-    logger.info("ChromaDB initialized successfully")
+    logger.info(f"ChromaDB initialized successfully at {PERSIST_DIR}")
 except Exception as e:
     logger.error(f"ChromaDB initialization failed: {e}")
     collection = None
@@ -117,7 +135,8 @@ async def health_check():
     )
 
 @app.post("/api/analyze", response_model=DocumentAnalysisResponse)
-async def analyze_document(request: DocumentAnalysisRequest):
+@limiter.limit("10/minute")
+async def analyze_document(request: Request, analysis_request: DocumentAnalysisRequest):
     """Analyze legal document text using AI"""
     if not llm:
         raise HTTPException(status_code=503, detail="Ollama service not available")
@@ -130,7 +149,7 @@ async def analyze_document(request: DocumentAnalysisRequest):
 - "entities": A list of objects with "name" and "type" (e.g., Person, Organization, Date).
 
 Document:
-{request.text[:10000]}  # Limit text to avoid context window issues
+{analysis_request.text[:10000]}  # Limit text to avoid context window issues
 
 Respond ONLY with the JSON object. Do not add any markdown formatting or extra text."""
         
@@ -151,14 +170,14 @@ Respond ONLY with the JSON object. Do not add any markdown formatting or extra t
             }
         
         # Store in ChromaDB if available with secure ID generation
-        if collection and request.case_id:
+        if collection and analysis_request.case_id:
             # Generate secure unique ID using UUID
-            doc_id = f"{request.case_id}_{uuid.uuid4().hex}"
+            doc_id = f"{analysis_request.case_id}_{uuid.uuid4().hex}"
             collection.add(
-                documents=[request.text],
+                documents=[analysis_request.text],
                 metadatas=[
                     {
-                        "case_id": request.case_id, 
+                        "case_id": analysis_request.case_id, 
                         "type": "document",
                         "timestamp": datetime.now().isoformat()
                     }
@@ -166,19 +185,33 @@ Respond ONLY with the JSON object. Do not add any markdown formatting or extra t
                 ids=[doc_id]
             )
         
+        # Ensure summary is a string, defaulting to empty string if None
+        summary_text = parsed_response.get("summary")
+        if summary_text is None:
+            summary_text = "No summary available"
+        elif not isinstance(summary_text, str):
+            summary_text = str(summary_text)
+
         return DocumentAnalysisResponse(
-            summary=parsed_response.get("summary", "No summary available"),
+            summary=summary_text,
             key_points=parsed_response.get("key_points", []),
             entities=parsed_response.get("entities", []),
-            case_id=request.case_id
+            case_id=analysis_request.case_id
         )
         
     except Exception as e:
         logger.error(f"Analysis error: {e}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        error_msg = str(e)
+        if "No connection could be made" in error_msg or "Connection refused" in error_msg:
+            raise HTTPException(
+                status_code=503, 
+                detail="AI Service Unavailable. Please ensure Ollama is running (default port 11434)."
+            )
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {error_msg}")
 
 @app.post("/api/upload")
-async def upload_document(file: UploadFile = File(...)):
+@limiter.limit("5/minute")
+async def upload_document(request: Request, file: UploadFile = File(...)):
     """Upload and process document files with security validation"""
     
     # Validate filename
@@ -196,17 +229,31 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"Only {', '.join(ALLOWED_EXTENSIONS)} files are supported"
         )
     
-    # Validate content type
-    allowed_mime_types = {
-        'application/pdf', 'text/plain', 
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/octet-stream'  # Fallback
-    }
-    if file.content_type and file.content_type not in allowed_mime_types:
-        logger.warning(f"Suspicious content type: {file.content_type}")
-
     try:
-        # Read file content with size limit
+        # Read file header for magic bytes check (first 2KB)
+        header = await file.read(2048)
+        await file.seek(0)  # Reset cursor
+        
+        kind = filetype.guess(header)
+        
+        # Validate magic bytes
+        if kind is None and file_ext != '.txt':
+             # .txt files often don't have magic bytes, so we skip them if extension is .txt
+             # But for PDF/DOCX we expect a match
+             if file_ext in ['.pdf', '.docx']:
+                 logger.warning(f"Could not determine file type for {safe_filename}")
+        
+        if kind:
+            allowed_mimes = [
+                'application/pdf', 
+                'application/zip', # DOCX is a zip
+                'text/plain'
+            ]
+            if kind.mime not in allowed_mimes and file_ext != '.txt':
+                 # Strict check for non-txt files
+                 logger.warning(f"Detected MIME {kind.mime} does not match allowed types")
+
+        # Read full content with size limit
         content = await file.read(MAX_FILE_SIZE + 1)
         
         # Check file size
@@ -216,29 +263,11 @@ async def upload_document(file: UploadFile = File(...)):
                 detail=f"File too large. Maximum size is {MAX_FILE_SIZE / (1024*1024):.0f}MB"
             )
         
-        extracted_text = ""
-
-        if safe_filename.endswith('.pdf'):
-            # Open PDF from memory
-            try:
-                with fitz.open(stream=content, filetype="pdf") as doc:
-                    for page in doc:
-                        extracted_text += page.get_text()
-            except Exception as pdf_error:
-                logger.warning(f"PDF extraction failed: {pdf_error}")
-                extracted_text = "Failed to extract text from PDF"
-        elif safe_filename.endswith('.txt'):
-            try:
-                extracted_text = content.decode('utf-8')
-            except UnicodeDecodeError:
-                # Try with error handling
-                extracted_text = content.decode('utf-8', errors='ignore')
-        else:
-            # Placeholder for DOCX
-            extracted_text = "DOCX extraction not yet implemented."
+        # Process document using the service
+        extracted_text = await process_document_content(safe_filename, content)
 
         return {
-            "filename": safe_filename,  # Return sanitized filename
+            "filename": safe_filename,
             "size": len(content),
             "status": "uploaded",
             "message": "File uploaded and processed successfully",
@@ -254,15 +283,16 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @app.post("/api/search", response_model=SearchResponse)
-async def search_documents(request: SearchRequest):
+@limiter.limit("20/minute")
+async def search_documents(request: Request, search_request: SearchRequest):
     """Search documents in ChromaDB"""
     if not collection:
         raise HTTPException(status_code=503, detail="ChromaDB service not available")
 
     try:
         results = collection.query(
-            query_texts=[request.query],
-            n_results=request.limit
+            query_texts=[search_request.query],
+            n_results=search_request.limit
         )
 
         formatted_results = []
