@@ -4,6 +4,7 @@ import "./globals.css";
 import { Stars } from "@/components/ui/Stars";
 import { SettingsProvider } from '@/context/SettingsContext';
 import { AdminPanel } from '@/components/AdminPanel';
+import { Toaster } from 'sonner';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,6 +37,7 @@ export default function RootLayout({
             <AdminPanel />
             {children}
           </div>
+          <Toaster theme="dark" position="top-center" richColors />
         </SettingsProvider>
       </body>
     </html>

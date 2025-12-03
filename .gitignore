@@ -50,3 +50,8 @@ __pycache__
 htmlcov/
 .pytest_cache/
 .coverage
+
+# database
+chroma_db/
+*.sqlite3
+neo4j/

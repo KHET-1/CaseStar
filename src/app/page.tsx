@@ -7,6 +7,7 @@ import { ProcessingStatus } from '@/components/ProcessingStatus';
 import { TimelineView } from '@/components/TimelineView';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadDocument, analyzeDocument, type AnalysisResult } from '@/lib/api';
+import { toast } from 'sonner';
 
 type ProcessingStage = 'idle' | 'uploading' | 'reading' | 'analyzing' | 'complete' | 'error';
 
@@ -29,6 +30,7 @@ export default function Home() {
       setProgress(0);
 
       const uploadResult = await uploadDocument(file);
+      toast.success('Document uploaded successfully');
       setProgress(33);
 
       // Stage 2: Reading
@@ -39,6 +41,7 @@ export default function Home() {
 
       if (!uploadResult.extracted_text) {
         console.warn('No text extracted from document');
+        toast.warning('Could not extract text from document');
       }
 
       // Short delay for UX
@@ -50,6 +53,7 @@ export default function Home() {
       const caseId = `case-${Date.now()}`;
 
       const analysisResult = await analyzeDocument(textToAnalyze, caseId);
+      toast.success('AI Analysis Complete!');
       setProgress(100);
 
       // Stage 4: Complete
@@ -63,7 +67,9 @@ export default function Home() {
 
     } catch (err) {
       setStage('error');
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const errorMessage = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      setError(errorMessage);
+      toast.error(errorMessage);
     }
   };
 

@@ -1,16 +1,18 @@
 import requests
-import json
 
-url = 'http://localhost:8000/api/analyze'
+url = 'http://localhost:50000/api/analyze'
 payload = {
-    "text": "The Plaintiff, John Doe, filed a lawsuit against Acme Corp on January 1st, 2023 regarding a breach of contract.",
+    "text": (
+        "The Plaintiff, John Doe, filed a lawsuit against Acme Corp on "
+        "January 1st, 2023 regarding a breach of contract."
+    ),
     "case_id": "test_case_123"
 }
 
+print("Sending analysis request...")
 try:
-    print("Sending analysis request...")
     response = requests.post(url, json=payload)
-    
+
     if response.status_code == 200:
         data = response.json()
         print("\n✅ Analysis Successful!")
