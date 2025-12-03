@@ -1,5 +1,5 @@
 // API client for CaseStar backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:50000';
 
 export interface Entity {
   name: string;
@@ -26,6 +26,18 @@ export interface SearchResult {
   text: string;
   metadata: Record<string, unknown>;
   distance: number | null;
+}
+
+export interface Case {
+  id: string;
+  title: string;
+  created_at: string;
+}
+
+export interface CaseListResponse {
+  cases: Case[];
+  total: number;
+  message: string;
 }
 
 /**
@@ -99,6 +111,19 @@ export async function searchDocuments(
 
   const data = await response.json();
   return data.results;
+}
+
+/**
+ * Fetch all cases
+ */
+export async function getCases(): Promise<CaseListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/cases`);
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch cases');
+  }
+
+  return response.json();
 }
 
 /**

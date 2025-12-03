@@ -83,7 +83,7 @@ export default function Home() {
   return (
     <>
       <StarfieldGlow />
-      <div className="min-h-screen flex flex-col items-center justify-center p-8 relative overflow-hidden">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
         <FloatingOrb size="lg" />
 
         {/* Header - Always visible */}

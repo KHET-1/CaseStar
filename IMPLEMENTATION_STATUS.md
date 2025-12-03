@@ -29,6 +29,12 @@
 - **Persistence**: ChromaDB now saves data to `./chroma_db` (configurable via env var).
 - **Robustness**: Added fallback if JSON parsing fails.
 
+### 4. Frontend Integration
+
+- **Cases Page**: Created professional dark-themed dashboard at `/cases`.
+- **Navigation**: Added responsive Navbar.
+- **API Client**: Updated to support case listing and port 50000.
+
 ---
 
 ## 🚀 How to Run
@@ -44,7 +50,7 @@
    ```bash
    python main.py
    # OR
-   uvicorn main:app --reload --port 8000
+   uvicorn main:app --reload --port 50000
    ```
 
 3. **Start Frontend**:
@@ -57,10 +63,6 @@
 
 ## ⏭️ Next Steps
 
-1. **Frontend Polish**:
-   - Add Toast notifications for errors.
-   - Improve "Reading" stage visualization to match actual backend processing time.
-
-2. **Advanced Features**:
-   - Implement OCR for scanned PDFs (currently detects encryption but not scanned-only).
-   - Add Neo4j integration for case management.
+1. **Advanced Features**:
+   - Implement OCR for scanned PDFs.
+   - Enhance Neo4j graph visualization.

@@ -5,6 +5,7 @@ import { Stars } from "@/components/ui/Stars";
 import { SettingsProvider } from '@/context/SettingsContext';
 import { AdminPanel } from '@/components/AdminPanel';
 import { Toaster } from 'sonner';
+import { Navbar } from '@/components/Navbar';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,9 +34,12 @@ export default function RootLayout({
       >
         <SettingsProvider>
           <Stars />
-          <div className="relative z-10">
+          <div className="relative z-10 flex flex-col min-h-screen">
+            <Navbar />
             <AdminPanel />
-            {children}
+            <main className="flex-1">
+              {children}
+            </main>
           </div>
           <Toaster theme="dark" position="top-center" richColors />
         </SettingsProvider>
