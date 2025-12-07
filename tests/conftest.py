@@ -4,7 +4,7 @@ import tempfile
 import os
 from pathlib import Path
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 import sys
 
 # Add parent directory to path
